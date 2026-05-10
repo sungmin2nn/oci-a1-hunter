@@ -19,6 +19,7 @@ jobs:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           AUTH_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
           set -e
           UPDATES=$(curl -s "https://api.telegram.org/bot$TG_TOKEN/getUpdates?timeout=0&limit=100")
@@ -28,7 +29,6 @@ jobs:
             exit 0
           fi
           echo "Processing $COUNT updates"
-
           MAX_ID=0
           for i in $(seq 0 $((COUNT-1))); do
             UPDATE=$(echo "$UPDATES" | jq ".result[$i]")
@@ -36,24 +36,17 @@ jobs:
             CHAT_ID=$(echo "$UPDATE" | jq -r '.message.chat.id // empty')
             TEXT=$(echo "$UPDATE" | jq -r '.message.text // empty')
             if [ "$UID" -gt "$MAX_ID" ]; then MAX_ID=$UID; fi
-
-            if [ -z "$CHAT_ID" ] || [ -z "$TEXT" ]; then
-              continue
-            fi
+            if [ -z "$CHAT_ID" ] || [ -z "$TEXT" ]; then continue; fi
             if [ "$CHAT_ID" != "$AUTH_CHAT_ID" ]; then
               echo "Ignoring unauthorized chat: $CHAT_ID"
               continue
             fi
-
             CMD=$(echo "$TEXT" | awk '{print tolower($1)}')
             REPLY=""
-
             case "$CMD" in
               /status)
                 if [ -f .a1_captured ]; then
-                  IP=$(cat .a1_captured 2>/dev/null || echo "?")
-                  REPLY="✅ Already captured.
-Workflow disabled."
+                  REPLY=$'\xe2\x9c\x85 Already captured.\nWorkflow disabled.'
                 else
                   RUNS=$(gh run list --workflow=launch.yml --json conclusion,createdAt --limit 50)
                   TOTAL=$(echo "$RUNS" | jq 'length')
@@ -61,67 +54,34 @@ Workflow disabled."
                   F=$(echo "$RUNS" | jq '[.[] | select(.conclusion=="failure")] | length')
                   LAST=$(echo "$RUNS" | jq -r '.[0].createdAt // "none"')
                   WF_STATE=$(gh workflow view launch.yml --json state --jq '.state' 2>/dev/null || echo "unknown")
-                  REPLY="📊 A1 Hunter Status
-
-Workflow: $WF_STATE
-Recent ${TOTAL} runs: ${S} ok / ${F} fail
-Last: ${LAST}
-Still hunting..."
+                  REPLY=$(printf '%s A1 Hunter Status\n\nWorkflow: %s\nRecent %s runs: %s ok / %s fail\nLast: %s\nStill hunting...' "📊" "$WF_STATE" "$TOTAL" "$S" "$F" "$LAST")
                 fi
                 ;;
-
               /last)
-                LIST=$(gh run list --workflow=launch.yml --json conclusion,createdAt --limit 5 \
-                  | jq -r '.[] | "\(.createdAt | split("T")[0]) \(.createdAt | split("T")[1] | split(".")[0]) | \(.conclusion // "running")"')
-                REPLY="🕒 Recent 5 launches (UTC):
-
-$LIST"
+                LIST=$(gh run list --workflow=launch.yml --json conclusion,createdAt --limit 5 | jq -r '.[] | "\(.createdAt | split("T")[0]) \(.createdAt | split("T")[1] | split(".")[0]) | \(.conclusion // "running")"')
+                REPLY=$(printf '%s Recent 5 launches (UTC):\n\n%s' "🕒" "$LIST")
                 ;;
-
               /log)
-                LAST_FAIL=$(gh run list --workflow=launch.yml --json databaseId,conclusion --limit 50 \
-                  | jq -r '[.[] | select(.conclusion=="failure")] | .[0].databaseId // empty')
+                LAST_FAIL=$(gh run list --workflow=launch.yml --json databaseId,conclusion --limit 50 | jq -r '[.[] | select(.conclusion=="failure")] | .[0].databaseId // empty')
                 if [ -z "$LAST_FAIL" ]; then
-                  REPLY="✅ No failures in last 50 runs."
+                  REPLY=$'\xe2\x9c\x85 No failures in last 50 runs.'
                 else
-                  ERR=$(gh run view "$LAST_FAIL" --log-failed 2>&1 \
-                    | grep -iE "error|fail|exception|capacity" \
-                    | tail -5 \
-                    | sed 's/^[^Z]*Z //' \
-                    | cut -c1-200)
-                  REPLY="📜 Last failure (run $LAST_FAIL):
-
-$ERR
-
-Full: https://github.com/${{ github.repository }}/actions/runs/$LAST_FAIL"
+                  ERR=$(gh run view "$LAST_FAIL" --log-failed 2>&1 | grep -iE "error|fail|exception|capacity" | tail -5 | sed 's/^[^Z]*Z //' | cut -c1-200)
+                  REPLY=$(printf '%s Last failure (run %s):\n\n%s\n\nFull: https://github.com/%s/actions/runs/%s' "📜" "$LAST_FAIL" "$ERR" "$REPO" "$LAST_FAIL")
                 fi
                 ;;
-
               /help|/start)
-                REPLY="🤖 A1 Hunter Commands:
-
-/status - 현재 상태 + 최근 50회 통계
-/last - 최근 5번 실행 결과
-/log - 마지막 실패 로그 요약
-/help - 이 도움말
-
-(응답 지연 5~15분, GitHub Actions 폴링 주기)"
+                REPLY=$(printf '%s A1 Hunter Commands:\n\n/status - 현재 상태 + 최근 50회 통계\n/last - 최근 5번 실행 결과\n/log - 마지막 실패 로그 요약\n/help - 이 도움말\n\n(응답 지연 5~15분, GitHub Actions 폴링 주기)' "🤖")
                 ;;
-
               *)
-                REPLY="❓ Unknown: $CMD
-Try /help"
+                REPLY=$(printf '%s Unknown: %s\nTry /help' "❓" "$CMD")
                 ;;
             esac
-
             if [ -n "$REPLY" ]; then
-              curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
-                --data-urlencode "chat_id=$CHAT_ID" \
-                --data-urlencode "text=$REPLY" > /dev/null
+              curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" --data-urlencode "chat_id=$CHAT_ID" --data-urlencode "text=$REPLY" > /dev/null
               echo "Replied to $CMD"
             fi
           done
-
           if [ "$MAX_ID" -gt "0" ]; then
             curl -s "https://api.telegram.org/bot$TG_TOKEN/getUpdates?offset=$((MAX_ID+1))&timeout=0&limit=1" > /dev/null
             echo "Acked up to update_id $MAX_ID"
