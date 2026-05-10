@@ -32,10 +32,10 @@ jobs:
           MAX_ID=0
           for i in $(seq 0 $((COUNT-1))); do
             UPDATE=$(echo "$UPDATES" | jq ".result[$i]")
-            UID=$(echo "$UPDATE" | jq -r '.update_id')
+            UPD_ID=$(echo "$UPDATE" | jq -r '.update_id')
             CHAT_ID=$(echo "$UPDATE" | jq -r '.message.chat.id // empty')
             TEXT=$(echo "$UPDATE" | jq -r '.message.text // empty')
-            if [ "$UID" -gt "$MAX_ID" ]; then MAX_ID=$UID; fi
+            if [ "$UPD_ID" -gt "$MAX_ID" ]; then MAX_ID=$UPD_ID; fi
             if [ -z "$CHAT_ID" ] || [ -z "$TEXT" ]; then continue; fi
             if [ "$CHAT_ID" != "$AUTH_CHAT_ID" ]; then
               echo "Ignoring unauthorized chat: $CHAT_ID"
