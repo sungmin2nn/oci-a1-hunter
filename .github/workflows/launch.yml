@@ -74,8 +74,8 @@ jobs:
             echo "iid=$INSTANCE_ID" >> $GITHUB_OUTPUT
           else
             echo "captured=false" >> $GITHUB_OUTPUT
-            if echo "$OUTPUT" | grep -qE "Out of host capacity|TooManyRequests|InternalError|500"; then
-              echo "Capacity miss — will retry on next schedule"
+            if echo "$OUTPUT" | grep -qE "Out of host capacity|TooManyRequests|InternalError|500|RequestException|timed out|ConnectionError|connection"; then
+              echo "Transient error or capacity miss — will retry on next schedule"
               exit 0
             fi
             exit 1
