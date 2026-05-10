@@ -24,13 +24,24 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: oracle-actions/configure-oci-cli@v1.3
-        with:
-          user: ${{ secrets.OCI_USER_OCID }}
-          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          region: ${{ secrets.OCI_REGION }}
-          private_key: ${{ secrets.OCI_PRIVATE_KEY }}
+      - name: Install OCI CLI
+        run: |
+          pip install --quiet oci-cli
+
+      - name: Configure OCI
+        run: |
+          mkdir -p ~/.oci
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ secrets.OCI_REGION }}
+          key_file=$HOME/.oci/oci_api_key.pem
+          EOF
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/config ~/.oci/oci_api_key.pem
+          oci iam region list >/dev/null && echo "OCI auth OK"
 
       - name: Write helpers
         run: |
@@ -63,6 +74,11 @@ jobs:
             echo "iid=$INSTANCE_ID" >> $GITHUB_OUTPUT
           else
             echo "captured=false" >> $GITHUB_OUTPUT
+            if echo "$OUTPUT" | grep -qE "Out of host capacity|TooManyRequests|InternalError|500"; then
+              echo "Capacity miss — will retry on next schedule"
+              exit 0
+            fi
+            exit 1
           fi
 
       - name: Telegram success
