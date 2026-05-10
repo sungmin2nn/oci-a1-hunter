@@ -25,10 +25,15 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         id: count
         run: |
-          TOTAL=$(gh run list --workflow=launch.yml --json conclusion,createdAt --limit 200 \
-            | jq '[.[] | select((now - (.createdAt | fromdate)) < 86400)] | length')
-          LAST=$(gh run list --workflow=launch.yml --json createdAt --limit 1 | jq -r '.[0].createdAt')
+          RUNS=$(gh run list --workflow=launch.yml --json conclusion,createdAt --limit 200 \
+            | jq '[.[] | select((now - (.createdAt | fromdate)) < 86400)]')
+          TOTAL=$(echo "$RUNS" | jq 'length')
+          SUCCESS=$(echo "$RUNS" | jq '[.[] | select(.conclusion=="success")] | length')
+          FAILURE=$(echo "$RUNS" | jq '[.[] | select(.conclusion=="failure")] | length')
+          LAST=$(echo "$RUNS" | jq -r '.[0].createdAt // "none"')
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "success=$SUCCESS" >> $GITHUB_OUTPUT
+          echo "failure=$FAILURE" >> $GITHUB_OUTPUT
           echo "last=$LAST" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,7 +41,23 @@ jobs:
       - name: Telegram daily
         if: steps.check.outputs.skip != 'true'
         run: |
-          MSG="⏳ A1.Flex 4/24 hunting%0A%0ALast 24h attempts: ${{ steps.count.outputs.total }}%0ALatest run: ${{ steps.count.outputs.last }}%0A%0AStill trying..."
+          T=${{ steps.count.outputs.total }}
+          S=${{ steps.count.outputs.success }}
+          F=${{ steps.count.outputs.failure }}
+          LAST="${{ steps.count.outputs.last }}"
+          if [ "$T" = "0" ]; then
+            HEADER="⚠️ NO RUNS in last 24h%0Aschedule may be broken!"
+          elif [ "$F" -gt "0" ] && [ "$S" = "0" ]; then
+            HEADER="🚨 ALL ATTEMPTS FAILED%0Acheck secrets / permissions"
+          else
+            HEADER="⏳ A1.Flex 4/24 hunting"
+          fi
+          MSG="${HEADER}%0A%0A24h: ${T} runs (${S} ok, ${F} fail)%0ALast: ${LAST}%0A%0AStill trying..."
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d "text=$MSG"
+
+      - name: Telegram on captured note
+        if: steps.check.outputs.skip == 'true'
+        run: |
+          echo "Already captured. No daily summary needed."
