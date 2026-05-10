@@ -44,7 +44,7 @@ jobs:
             CMD=$(echo "$TEXT" | awk '{print tolower($1)}')
             REPLY=""
             case "$CMD" in
-              /status)
+              /oci_status)
                 if [ -f .a1_captured ]; then
                   REPLY=$'\xe2\x9c\x85 Already captured.\nWorkflow disabled.'
                 else
@@ -57,11 +57,11 @@ jobs:
                   REPLY=$(printf '%s A1 Hunter Status\n\nWorkflow: %s\nRecent %s runs: %s ok / %s fail\nLast: %s\nStill hunting...' "📊" "$WF_STATE" "$TOTAL" "$S" "$F" "$LAST")
                 fi
                 ;;
-              /last)
+              /oci_last)
                 LIST=$(gh run list --workflow=launch.yml --json conclusion,createdAt --limit 5 | jq -r '.[] | "\(.createdAt | split("T")[0]) \(.createdAt | split("T")[1] | split(".")[0]) | \(.conclusion // "running")"')
                 REPLY=$(printf '%s Recent 5 launches (UTC):\n\n%s' "🕒" "$LIST")
                 ;;
-              /log)
+              /oci_log)
                 LAST_FAIL=$(gh run list --workflow=launch.yml --json databaseId,conclusion --limit 50 | jq -r '[.[] | select(.conclusion=="failure")] | .[0].databaseId // empty')
                 if [ -z "$LAST_FAIL" ]; then
                   REPLY=$'\xe2\x9c\x85 No failures in last 50 runs.'
@@ -70,11 +70,12 @@ jobs:
                   REPLY=$(printf '%s Last failure (run %s):\n\n%s\n\nFull: https://github.com/%s/actions/runs/%s' "📜" "$LAST_FAIL" "$ERR" "$REPO" "$LAST_FAIL")
                 fi
                 ;;
-              /help|/start)
-                REPLY=$(printf '%s A1 Hunter Commands:\n\n/status - 현재 상태 + 최근 50회 통계\n/last - 최근 5번 실행 결과\n/log - 마지막 실패 로그 요약\n/help - 이 도움말\n\n(응답 지연 5~15분, GitHub Actions 폴링 주기)' "🤖")
+              /oci_help)
+                REPLY=$(printf '%s OCI A1 Hunter Commands:\n\n/oci_status - 현재 상태 + 최근 50회 통계\n/oci_last - 최근 5번 실행 결과\n/oci_log - 마지막 실패 로그 요약\n/oci_help - 이 도움말\n\n(응답 지연 5~15분, GitHub Actions 폴링 주기)' "🤖")
                 ;;
               *)
-                REPLY=$(printf '%s Unknown: %s\nTry /help' "❓" "$CMD")
+                # Non-oci_* commands: silent (other bots may handle)
+                echo "Ignoring non-oci command: $CMD"
                 ;;
             esac
             if [ -n "$REPLY" ]; then
