@@ -1,0 +1,6 @@
+*.log
+*.err
+shape.json
+ssh.pub
+.env
+*.pem

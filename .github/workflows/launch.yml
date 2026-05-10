@@ -1,0 +1,87 @@
+name: A1 Launch
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip if already captured
+        run: |
+          if [ -f .a1_captured ]; then
+            echo "Already captured. Disabling workflow."
+            gh workflow disable launch.yml
+            exit 0
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: oracle-actions/configure-oci-cli@v1.3
+        with:
+          user: ${{ secrets.OCI_USER_OCID }}
+          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          region: ${{ secrets.OCI_REGION }}
+          private_key: ${{ secrets.OCI_PRIVATE_KEY }}
+
+      - name: Write helpers
+        run: |
+          echo '{"ocpus": 4, "memoryInGBs": 24}' > shape.json
+          echo "${{ secrets.OCI_SSH_PUBLIC_KEY }}" > ssh.pub
+
+      - name: Try launch
+        id: launch
+        run: |
+          set +e
+          OUTPUT=$(oci compute instance launch \
+            --availability-domain "${{ secrets.OCI_AD }}" \
+            --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
+            --shape "VM.Standard.A1.Flex" \
+            --shape-config file://shape.json \
+            --image-id "${{ secrets.OCI_IMAGE_OCID }}" \
+            --subnet-id "${{ secrets.OCI_SUBNET_OCID }}" \
+            --display-name "arm-bot" \
+            --ssh-authorized-keys-file ssh.pub \
+            --assign-public-ip true \
+            --wait-for-state RUNNING --max-wait-seconds 600 2>&1)
+          CODE=$?
+          echo "$OUTPUT"
+          if [ $CODE -eq 0 ]; then
+            INSTANCE_ID=$(echo "$OUTPUT" | jq -r '.data.id')
+            VNIC_ID=$(oci compute instance list-vnics --instance-id "$INSTANCE_ID" --query 'data[0].id' --raw-output)
+            PUBLIC_IP=$(oci network vnic get --vnic-id "$VNIC_ID" --query 'data."public-ip"' --raw-output)
+            echo "captured=true" >> $GITHUB_OUTPUT
+            echo "ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+            echo "iid=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          else
+            echo "captured=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Telegram success
+        if: steps.launch.outputs.captured == 'true'
+        run: |
+          MSG="🎉 OCI A1.Flex 4 OCPU / 24 GB CAPTURED!%0A%0APublic IP: ${{ steps.launch.outputs.ip }}%0AInstance: ${{ steps.launch.outputs.iid }}%0A%0ASSH: ssh ubuntu@${{ steps.launch.outputs.ip }}"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=$MSG"
+
+      - name: Mark and disable
+        if: steps.launch.outputs.captured == 'true'
+        run: |
+          touch .a1_captured
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .a1_captured
+          git commit -m "captured: ${{ steps.launch.outputs.ip }}"
+          git push
+          gh workflow disable launch.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
