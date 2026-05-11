@@ -54,7 +54,20 @@ jobs:
                   F=$(echo "$RUNS" | jq '[.[] | select(.conclusion=="failure")] | length')
                   LAST=$(echo "$RUNS" | jq -r '.[0].createdAt // "none"')
                   WF_STATE=$(gh workflow view launch.yml --json state --jq '.state' 2>/dev/null || echo "unknown")
-                  REPLY=$(printf '%s A1 Hunter Status\n\nWorkflow: %s\nRecent %s runs: %s ok / %s fail\nLast: %s\nStill hunting...' "📊" "$WF_STATE" "$TOTAL" "$S" "$F" "$LAST")
+                  TIMES=$(echo "$RUNS" | jq -r '.[].createdAt' | sort)
+                  FIRST_T=$(echo "$TIMES" | head -1)
+                  LAST_T=$(echo "$TIMES" | tail -1)
+                  if [ -n "$FIRST_T" ] && [ "$TOTAL" -gt "1" ]; then
+                    FE=$(date -d "$FIRST_T" +%s)
+                    LE=$(date -d "$LAST_T" +%s)
+                    SPAN_H=$(awk -v s="$((LE-FE))" 'BEGIN{printf "%.1f", s/3600}')
+                    AVG_MIN=$(((LE-FE)/60/(TOTAL-1)))
+                    PER_HOUR=$(awk -v t="$TOTAL" -v h="$SPAN_H" 'BEGIN{if(h>0)printf "%.2f", t/h; else print "n/a"}')
+                    FREQ_STR=$(printf 'Avg interval: %s min (%s/hr over %sh)' "$AVG_MIN" "$PER_HOUR" "$SPAN_H")
+                  else
+                    FREQ_STR="Avg interval: n/a"
+                  fi
+                  REPLY=$(printf '%s A1 Hunter Status\n\nWorkflow: %s\nRecent %s runs: %s ok / %s fail\n%s\nLast: %s\nStill hunting...' "📊" "$WF_STATE" "$TOTAL" "$S" "$F" "$FREQ_STR" "$LAST")
                 fi
                 ;;
               /oci_last)
