@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
+  actions: write
   contents: read
 
 jobs:
@@ -83,8 +83,20 @@ jobs:
                   REPLY=$(printf '%s Last failure (run %s):\n\n%s\n\nFull: https://github.com/%s/actions/runs/%s' "📜" "$LAST_FAIL" "$ERR" "$REPO" "$LAST_FAIL")
                 fi
                 ;;
+              /oci_run)
+                if [ -f .a1_captured ]; then
+                  REPLY=$'\xe2\x9c\x85 Already captured. Hunting workflow is disabled.'
+                else
+                  RESULT=$(gh workflow run launch.yml 2>&1)
+                  if [ $? -eq 0 ]; then
+                    REPLY=$(printf '%s Manually triggered A1 Launch\n\nCheck: https://github.com/%s/actions/workflows/launch.yml' "🚀" "$REPO")
+                  else
+                    REPLY=$(printf '%s Trigger failed:\n%s' "❌" "$RESULT")
+                  fi
+                fi
+                ;;
               /oci_help)
-                REPLY=$(printf '%s OCI A1 Hunter Commands:\n\n/oci_status - 현재 상태 + 최근 50회 통계\n/oci_last - 최근 5번 실행 결과\n/oci_log - 마지막 실패 로그 요약\n/oci_help - 이 도움말\n\n(응답 지연 5~15분, GitHub Actions 폴링 주기)' "🤖")
+                REPLY=$(printf '%s OCI A1 Hunter Commands:\n\n/oci_status - 현재 상태 + 최근 50회 통계\n/oci_last - 최근 5번 실행 결과\n/oci_log - 마지막 실패 로그 요약\n/oci_run - 즉시 1회 launch 수동 트리거\n/oci_help - 이 도움말\n\n(응답 지연 5~15분, GitHub Actions 폴링 주기)' "🤖")
                 ;;
               *)
                 # Non-oci_* commands: silent (other bots may handle)
