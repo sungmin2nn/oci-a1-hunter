@@ -9,6 +9,10 @@ permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: a1-launch
+  cancel-in-progress: false
+
 jobs:
   launch:
     runs-on: ubuntu-latest
@@ -49,37 +53,53 @@ jobs:
           echo '{"ocpus": 4, "memoryInGBs": 24}' > shape.json
           echo "${{ secrets.OCI_SSH_PUBLIC_KEY }}" > ssh.pub
 
-      - name: Try launch
+      - name: Try launch (burst)
         id: launch
+        env:
+          BURST_COUNT: "10"
+          BURST_SLEEP: "25"
         run: |
           set +e
-          OUTPUT=$(oci compute instance launch \
-            --availability-domain "${{ secrets.OCI_AD }}" \
-            --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
-            --shape "VM.Standard.A1.Flex" \
-            --shape-config file://shape.json \
-            --image-id "${{ secrets.OCI_IMAGE_OCID }}" \
-            --subnet-id "${{ secrets.OCI_SUBNET_OCID }}" \
-            --display-name "arm-bot" \
-            --ssh-authorized-keys-file ssh.pub \
-            --assign-public-ip true \
-            --wait-for-state RUNNING --max-wait-seconds 600 2>&1)
-          CODE=$?
-          echo "$OUTPUT"
-          if [ $CODE -eq 0 ]; then
-            INSTANCE_ID=$(echo "$OUTPUT" | jq -r '.data.id')
-            VNIC_ID=$(oci compute instance list-vnics --instance-id "$INSTANCE_ID" --query 'data[0].id' --raw-output)
-            PUBLIC_IP=$(oci network vnic get --vnic-id "$VNIC_ID" --query 'data."public-ip"' --raw-output)
-            echo "captured=true" >> $GITHUB_OUTPUT
-            echo "ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
-            echo "iid=$INSTANCE_ID" >> $GITHUB_OUTPUT
-          else
-            echo "captured=false" >> $GITHUB_OUTPUT
-            if echo "$OUTPUT" | grep -qE "Out of host capacity|TooManyRequests|InternalError|500|RequestException|timed out|ConnectionError|connection"; then
-              echo "Transient error or capacity miss — will retry on next schedule"
-              exit 0
+          CAPTURED=false
+          for i in $(seq 1 $BURST_COUNT); do
+            echo "::group::Attempt $i/$BURST_COUNT"
+            OUTPUT=$(oci compute instance launch \
+              --availability-domain "${{ secrets.OCI_AD }}" \
+              --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
+              --shape "VM.Standard.A1.Flex" \
+              --shape-config file://shape.json \
+              --image-id "${{ secrets.OCI_IMAGE_OCID }}" \
+              --subnet-id "${{ secrets.OCI_SUBNET_OCID }}" \
+              --display-name "arm-bot" \
+              --ssh-authorized-keys-file ssh.pub \
+              --assign-public-ip true \
+              --wait-for-state RUNNING --max-wait-seconds 600 2>&1)
+            CODE=$?
+            echo "$OUTPUT"
+            echo "::endgroup::"
+            if [ $CODE -eq 0 ]; then
+              INSTANCE_ID=$(echo "$OUTPUT" | jq -r '.data.id')
+              VNIC_ID=$(oci compute instance list-vnics --instance-id "$INSTANCE_ID" --query 'data[0].id' --raw-output)
+              PUBLIC_IP=$(oci network vnic get --vnic-id "$VNIC_ID" --query 'data."public-ip"' --raw-output)
+              echo "captured=true" >> $GITHUB_OUTPUT
+              echo "ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+              echo "iid=$INSTANCE_ID" >> $GITHUB_OUTPUT
+              CAPTURED=true
+              break
             fi
-            exit 1
+            if ! echo "$OUTPUT" | grep -qE "Out of host capacity|TooManyRequests|InternalError|500|RequestException|timed out|ConnectionError|connection"; then
+              echo "Non-transient error on attempt $i — aborting burst"
+              echo "captured=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            if [ $i -lt $BURST_COUNT ]; then
+              sleep $BURST_SLEEP
+            fi
+          done
+          if [ "$CAPTURED" != "true" ]; then
+            echo "captured=false" >> $GITHUB_OUTPUT
+            echo "Burst exhausted ($BURST_COUNT attempts) — capacity not found this cycle"
+            exit 0
           fi
 
       - name: Telegram success
