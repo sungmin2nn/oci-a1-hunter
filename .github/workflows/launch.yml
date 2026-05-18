@@ -105,7 +105,8 @@ jobs:
       - name: Telegram success
         if: steps.launch.outputs.captured == 'true'
         run: |
-          MSG="🎉 🎉 🎉 OCI A1.Flex 4 OCPU / 24 GB CAPTURED!%0A%0APublic IP: ${{ steps.launch.outputs.ip }}%0AInstance: ${{ steps.launch.outputs.iid }}%0A%0ASSH: ssh ubuntu@${{ steps.launch.outputs.ip }}"
+          GUIDE_URL="https://github.com/${{ github.repository }}/blob/main/POST_CAPTURE.md"
+          MSG="🎉 🎉 🎉 OCI A1.Flex 4 OCPU / 24 GB CAPTURED!%0A%0APublic IP: ${{ steps.launch.outputs.ip }}%0AInstance: ${{ steps.launch.outputs.iid }}%0A%0ASSH: ssh ubuntu@${{ steps.launch.outputs.ip }}%0A%0A=== 이걸로 뭘 할까 ===%0ANTR 매매 VM은 그대로 두고, 본 A1은 신규 워크로드로:%0A1) 시뮬·그리드 백테스트 머신 (최우선)%0A2) NTR 스테이징 / DRY_RUN 카나리%0A3) Grafana+Loki 자체 모니터링%0A4) 한투/뉴스 raw 데이터 수집기%0A%0A❌ 매매 VM 이전 / 로컬 LLM 호스팅은 비추%0A%0A상세 가이드:%0A$GUIDE_URL"
           for i in 1 2 3; do
             curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
               -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
