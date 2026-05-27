@@ -43,7 +43,7 @@ jobs:
         env:
           HUNT_START_DATE: "2026-05-10"
           REGION_LABEL: "ap-chuncheon-1"
-          BURST_COUNT: "50"
+          BURST_COUNT: "30"
         run: |
           T=${{ steps.count.outputs.total }}
           S=${{ steps.count.outputs.success }}

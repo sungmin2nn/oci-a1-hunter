@@ -56,8 +56,8 @@ jobs:
       - name: Try launch (burst)
         id: launch
         env:
-          BURST_COUNT: "50"
-          BURST_SLEEP: "5"
+          BURST_COUNT: "30"
+          BURST_SLEEP: "10"
         run: |
           set +e
           CAPTURED=false
