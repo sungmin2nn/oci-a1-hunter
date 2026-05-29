@@ -67,7 +67,7 @@ jobs:
                   else
                     FREQ_STR="Avg interval: n/a"
                   fi
-                  REPLY=$(printf '%s A1 Hunter Status\n\nWorkflow: %s\nRecent %s runs: %s ok / %s fail\n%s\nLast: %s\nStill hunting...' "📊" "$WF_STATE" "$TOTAL" "$S" "$F" "$FREQ_STR" "$LAST")
+                  REPLY=$(printf '%s A1 Hunter Status\n\nWorkflow: %s\nRecent %s runs: %s no-capacity / %s error\nStatus: 🟡 not captured yet\n%s\nLast: %s\nStill hunting...' "📊" "$WF_STATE" "$TOTAL" "$S" "$F" "$FREQ_STR" "$LAST")
                 fi
                 ;;
               /oci_last)

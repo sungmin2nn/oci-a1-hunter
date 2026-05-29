@@ -64,12 +64,12 @@ jobs:
             STATS="📊 최근 24시간%0A  실행 횟수: 0회%0A  ⚠️ 스케줄이 멈췄을 가능성 — cron-job.org 확인 필요"
             TAIL="마지막 시도 없음"
           elif [ "$F" -gt "0" ] && [ "$S" = "0" ]; then
-            HEADER="🚨 🚨 🚨 A1 사냥 — 전부 실패"
-            STATS="📊 최근 24시간%0A  실행 횟수: ${T}회%0A  시도 횟수: 약 ${ATTEMPTS_FMT}회%0A  성공 ${S} · 실패 ${F}%0A  🚨 secrets / permissions 확인 필요"
+            HEADER="🚨 🚨 🚨 A1 사냥 — 전부 에러"
+            STATS="📊 최근 24시간%0A  실행 횟수: ${T}회%0A  시도 횟수: 약 ${ATTEMPTS_FMT}회%0A  capacity 없음 ${S}회 · 에러 ${F}회%0A  🚨 secrets / permissions 확인 필요"
             TAIL="🔄 마지막 시도: ${LAST_KST} KST"
           else
             HEADER="⏳ ⏳ ⏳ A1 사냥 현황"
-            STATS="📊 최근 24시간%0A  실행 횟수: ${T}회%0A  시도 횟수: 약 ${ATTEMPTS_FMT}회%0A  성공 ${S} · 실패 ${F}"
+            STATS="📊 최근 24시간%0A  실행 횟수: ${T}회%0A  시도 횟수: 약 ${ATTEMPTS_FMT}회%0A  capacity 없음 ${S}회 · 에러 ${F}회%0A  🟡 아직 A1 미포획"
             TAIL="🔄 마지막 시도: ${LAST_KST} KST%0A%0A계속 사냥 중..."
           fi
           MSG="${HEADER}%0A%0A${BASE}%0A%0A${STATS}%0A%0A${TAIL}"
