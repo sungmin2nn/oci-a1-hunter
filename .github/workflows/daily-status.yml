@@ -72,7 +72,8 @@ jobs:
             STATS="📊 최근 24시간%0A  실행 횟수: ${T}회%0A  시도 횟수: 약 ${ATTEMPTS_FMT}회%0A  capacity 없음 ${S}회 · 에러 ${F}회%0A  🟡 아직 A1 미포획"
             TAIL="🔄 마지막 시도: ${LAST_KST} KST%0A%0A계속 사냥 중..."
           fi
-          MSG="${HEADER}%0A%0A${BASE}%0A%0A${STATS}%0A%0A${TAIL}"
+          CMDS="🤖 OCI A1 Hunter Commands:%0A/oci_status - 현재 상태 + 최근 50회 통계 (capacity 없음/에러)%0A/oci_last - 최근 5번 실행 결과%0A/oci_log - 마지막 에러 로그 요약%0A/oci_run - 즉시 1회 launch 수동 트리거%0A/oci_help - 이 도움말%0A%0A(응답 지연 5~15분, GitHub Actions 폴링 주기)"
+          MSG="${HEADER}%0A%0A${BASE}%0A%0A${STATS}%0A%0A${TAIL}%0A%0A${CMDS}"
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d "text=$MSG"
