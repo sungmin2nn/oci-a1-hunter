@@ -1,0 +1,21 @@
+name: TG Diag
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Diagnose telegram secrets
+        run: |
+          echo "=== getMe (토큰 유효성/봇 식별) ==="
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/getMe" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); r=d.get('result',{}); print('ok=',d.get('ok'),'| username=',r.get('username'),'| first_name=',r.get('first_name'),'| error=',d.get('description'))"
+          echo "=== sendMessage (chat 검증) ==="
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=🔧 oci-a1-hunter 텔레그램 진단 테스트" \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('ok=',d.get('ok'),'| message_id=',d.get('result',{}).get('message_id'),'| error=',d.get('description'))"
