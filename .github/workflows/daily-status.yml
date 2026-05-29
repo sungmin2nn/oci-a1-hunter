@@ -70,7 +70,11 @@ jobs:
             ICON="♨️"
             BODY="📅 ${HUNT_START_DATE} ~ / D%2B${DAYS}%0A🔄 ${T}회 실행 / 약 ${ATTEMPTS_FMT}회 시도 · 에러 ${F}%0A🎯 ${REGION_LABEL} · A1.Flex 4/24%0A⏳ 최근 ${LAST_KST} KST"
           fi
-          MSG="🤖 A1 사냥 현황 - ${TODAY_MD} [${ICON}]%0A${BODY}%0A${SEP}%0A${CMDS}%0A${SEP}"
+          MSG="🤖 A1 사냥 현황 - ${TODAY_MD} [${ICON}]%0A${BODY}"
+          # 명령어 안내는 15일에 한 번만 (D+0, D+15, D+30 ...)
+          if [ $((DAYS % 15)) -eq 0 ]; then
+            MSG="${MSG}%0A${SEP}%0A${CMDS}%0A${SEP}"
+          fi
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d "text=$MSG"
