@@ -1,0 +1,19 @@
+name: Cleanup Test Msgs
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete test messages
+        run: |
+          for MID in 402 403; do
+            RESP=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/deleteMessage" \
+              -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+              -d "message_id=$MID")
+            echo "message_id=$MID -> $RESP"
+          done
