@@ -62,13 +62,13 @@ jobs:
           CMDS="🤖 OCI 코멘트 ( 응답 5~15분 지연 )%0A/oci_help - 이 도움말%0A/oci_status - 현재 상태 %2B 최근 50회 통계 (capacity 없음/에러)%0A/oci_last - 최근 5번 실행 결과%0A/oci_log - 마지막 에러 로그 요약%0A/oci_run - 즉시 1회 launch 수동 트리거"
           if [ "$T" = "0" ]; then
             ICON="⚠️"
-            BODY="📅 ${HUNT_START_DATE} ~ / D%2B${DAYS}%0A🔄 24시간 실행 0건 — 스케줄 멈춤 의심 (cron-job.org 확인)%0A🎯 ${REGION_LABEL} · A1.Flex 4/24%0A⏳ 최근 없음"
+            BODY="📅 ${HUNT_START_DATE} ~ / D%2B${DAYS}%0A🔄 24시간 실행 0건 — 스케줄 멈춤 의심 (cron-job.org 확인)%0A🎯 ${REGION_LABEL} · A1.Flex 2/12%0A⏳ 최근 없음"
           elif [ "$F" -gt "0" ] && [ "$S" = "0" ]; then
             ICON="🚨"
-            BODY="📅 ${HUNT_START_DATE} ~ / D%2B${DAYS}%0A🔄 ${T}회 실행 / 약 ${ATTEMPTS_FMT}회 시도 · 에러 ${F}%0A🚨 전부 에러 — secrets / permissions 확인 필요%0A🎯 ${REGION_LABEL} · A1.Flex 4/24%0A⏳ 최근 ${LAST_KST} KST"
+            BODY="📅 ${HUNT_START_DATE} ~ / D%2B${DAYS}%0A🔄 ${T}회 실행 / 약 ${ATTEMPTS_FMT}회 시도 · 에러 ${F}%0A🚨 전부 에러 — secrets / permissions 확인 필요%0A🎯 ${REGION_LABEL} · A1.Flex 2/12%0A⏳ 최근 ${LAST_KST} KST"
           else
             ICON="♨️"
-            BODY="📅 ${HUNT_START_DATE} ~ / D%2B${DAYS}%0A🔄 ${T}회 실행 / 약 ${ATTEMPTS_FMT}회 시도 · 에러 ${F}%0A🎯 ${REGION_LABEL} · A1.Flex 4/24%0A⏳ 최근 ${LAST_KST} KST"
+            BODY="📅 ${HUNT_START_DATE} ~ / D%2B${DAYS}%0A🔄 ${T}회 실행 / 약 ${ATTEMPTS_FMT}회 시도 · 에러 ${F}%0A🎯 ${REGION_LABEL} · A1.Flex 2/12%0A⏳ 최근 ${LAST_KST} KST"
           fi
           MSG="🤖 A1 사냥 현황 - ${TODAY_MD} [${ICON}]%0A${BODY}"
           # 명령어 안내는 15일에 한 번만 (D+0, D+15, D+30 ...)
