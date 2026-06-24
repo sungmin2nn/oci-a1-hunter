@@ -113,15 +113,15 @@ jobs:
             --service-name compute \
             --limit-name "standard-a1-core-count" \
             --availability-domain "$AD" 2>&1 | grep -iE "available|used|quota|fractional|error|message" || true
-          echo "=== configured limit VALUE for every a1-related name ==="
+          echo "=== AD별 standard-a1-core-count 값 (모든 AD) ==="
           oci limits value list --compartment-id "$TENANCY" \
-            --service-name compute \
-            --availability-domain "$AD" > /tmp/limits.json 2>/tmp/limits.err
-          if jq -e . /tmp/limits.json >/dev/null 2>&1; then
-            jq -r '.data[] | select(.name | ascii_downcase | test("a1")) | "LIMIT \(.name) = \(.value)"' /tmp/limits.json
-            echo "(a1 항목이 위에 없으면 = 계정에 A1 limit 자체가 미존재)"
+            --service-name compute --name standard-a1-core-count \
+            > /tmp/a1.json 2>/tmp/a1.err
+          if jq -e . /tmp/a1.json >/dev/null 2>&1; then
+            jq -r '.data[] | "LIMIT standard-a1-core-count @\(."availability-domain" // "REGIONAL") = \(.value)"' /tmp/a1.json
+            echo "합계 value = $(jq '[.data[].value] | add' /tmp/a1.json)"
           else
-            echo "value list 파싱 실패:"; cat /tmp/limits.err
+            echo "조회 실패:"; cat /tmp/a1.err
           fi
           echo "::endgroup::"
 
