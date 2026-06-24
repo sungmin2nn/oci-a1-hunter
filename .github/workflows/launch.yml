@@ -53,6 +53,63 @@ jobs:
           echo '{"ocpus": 2, "memoryInGBs": 12}' > shape.json
           echo "${{ secrets.OCI_SSH_PUBLIC_KEY }}" > ssh.pub
 
+      - name: Preflight - validate resources
+        id: preflight
+        env:
+          TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          IMG: ${{ secrets.OCI_IMAGE_OCID }}
+          SUBNET: ${{ secrets.OCI_SUBNET_OCID }}
+          AD: ${{ secrets.OCI_AD }}
+        run: |
+          set +e
+          BAD=0
+
+          echo "::group::Compartment / AD"
+          AD_OUT=$(oci iam availability-domain list --compartment-id "$TENANCY" 2>&1)
+          if [ $? -ne 0 ]; then
+            echo "FAIL: cannot list ADs in compartment (OCI_TENANCY_OCID bad or no perms)"
+            echo "$AD_OUT"; BAD=1
+          else
+            if echo "$AD_OUT" | jq -e --arg ad "$AD" '.data[] | select(.name==$ad)' >/dev/null 2>&1; then
+              echo "PASS: AD '$AD' exists"
+            else
+              echo "FAIL: OCI_AD '$AD' not found among available ADs:"
+              echo "$AD_OUT" | jq -r '.data[].name'
+              BAD=1
+            fi
+          fi
+          echo "::endgroup::"
+
+          echo "::group::Image"
+          IMG_OUT=$(oci compute image get --image-id "$IMG" 2>&1)
+          if [ $? -ne 0 ]; then
+            echo "FAIL: OCI_IMAGE_OCID invalid/retired (404 NotAuthorizedOrNotFound)"
+            echo "$IMG_OUT"; BAD=1
+          else
+            STATE=$(echo "$IMG_OUT" | jq -r '.data."lifecycle-state"')
+            NAME=$(echo "$IMG_OUT" | jq -r '.data."display-name"')
+            echo "PASS: image '$NAME' state=$STATE"
+            [ "$STATE" != "AVAILABLE" ] && echo "WARN: image not AVAILABLE" && BAD=1
+          fi
+          echo "::endgroup::"
+
+          echo "::group::Subnet"
+          SUB_OUT=$(oci network subnet get --subnet-id "$SUBNET" 2>&1)
+          if [ $? -ne 0 ]; then
+            echo "FAIL: OCI_SUBNET_OCID invalid/deleted"
+            echo "$SUB_OUT"; BAD=1
+          else
+            SSTATE=$(echo "$SUB_OUT" | jq -r '.data."lifecycle-state"')
+            echo "PASS: subnet state=$SSTATE"
+          fi
+          echo "::endgroup::"
+
+          if [ "$BAD" -ne 0 ]; then
+            echo "PREFLIGHT FAILED — a referenced resource is invalid. Fix the secret above, no launch attempted."
+            exit 1
+          fi
+          echo "Preflight OK — all launch resources valid."
+
       - name: Try launch (burst)
         id: launch
         env:
