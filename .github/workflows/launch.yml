@@ -107,19 +107,27 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::A1 limits / availability (diag)"
+          echo "=== resource-availability (standard-a1-core-count) ==="
           oci limits resource-availability get \
             --compartment-id "$TENANCY" \
             --service-name compute \
             --limit-name "standard-a1-core-count" \
             --availability-domain "$AD" 2>&1 | grep -iE "available|used|quota|fractional|error|message" || true
-          echo "--- configured A1 limit value (quota vs capacity 판별) ---"
+          echo "=== configured limit VALUE for every a1-related name ==="
           oci limits value list --compartment-id "$TENANCY" \
             --service-name compute \
-            --availability-domain "$AD" 2>&1 | grep -iE "standard-a1|\"value\"|\"name\"" | head -20 || true
-          echo "--- existing instances (compute read check) ---"
-          oci compute instance list --compartment-id "$TENANCY" \
-            --query 'data[].{name:"display-name",shape:shape,state:"lifecycle-state"}' 2>&1 | head -30 || true
+            --availability-domain "$AD" > /tmp/limits.json 2>/tmp/limits.err
+          if jq -e . /tmp/limits.json >/dev/null 2>&1; then
+            jq -r '.data[] | select(.name | ascii_downcase | test("a1")) | "LIMIT \(.name) = \(.value)"' /tmp/limits.json
+            echo "(a1 항목이 위에 없으면 = 계정에 A1 limit 자체가 미존재)"
+          else
+            echo "value list 파싱 실패:"; cat /tmp/limits.err
+          fi
           echo "::endgroup::"
+
+          # === TEMP DIAG: limit 값만 확인하고 종료 (버스트 건너뜀 → 텔레그램 알림 안 나감) ===
+          echo "DIAG RUN — burst 생략, 알림 억제. limit 값 확인 후 종료."
+          exit 1
 
           if [ "$BAD" -ne 0 ]; then
             echo "PREFLIGHT FAILED — a referenced resource is invalid. Fix the secret above, no launch attempted."
