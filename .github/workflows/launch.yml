@@ -106,6 +106,17 @@ jobs:
           fi
           echo "::endgroup::"
 
+          echo "::group::A1 limits / availability (diag)"
+          oci limits resource-availability get \
+            --compartment-id "$TENANCY" \
+            --service-name compute \
+            --limit-name "standard-a1-core-count" \
+            --availability-domain "$AD" 2>&1 | grep -iE "available|used|quota|fractional|error|message" || true
+          echo "--- existing instances (compute read check) ---"
+          oci compute instance list --compartment-id "$TENANCY" \
+            --query 'data[].{name:"display-name",shape:shape,state:"lifecycle-state"}' 2>&1 | head -30 || true
+          echo "::endgroup::"
+
           if [ "$BAD" -ne 0 ]; then
             echo "PREFLIGHT FAILED — a referenced resource is invalid. Fix the secret above, no launch attempted."
             exit 1
