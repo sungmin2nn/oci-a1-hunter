@@ -16,6 +16,8 @@ concurrency:
 jobs:
   launch:
     runs-on: ubuntu-latest
+    env:
+      SUPPRESS_LABEL_WARNING: "True"
     steps:
       - uses: actions/checkout@v6
 
