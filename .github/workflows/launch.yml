@@ -14,7 +14,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 빈도 게이트: 항상 5분마다 도는 cron을 받아서, "실제 사냥 잡(launch)"을 돌릴지 결정.
+  #  - 정상(미차단): 매 틱 proceed=true → 5분마다 사냥 (용량 뜨면 즉시 잡기 위함)
+  #  - 차단(.a1_blocked 존재, A1 limit=0): ~2시간에 1번만 proceed=true → limit 재확인만, 낭비/스팸 없음
+  #  - 수동 실행(workflow_dispatch): 항상 proceed
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.g.outputs.proceed }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Decide cadence
+        id: g
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "proceed=true" >> $GITHUB_OUTPUT; echo "manual run — proceed"; exit 0
+          fi
+          if [ -f .a1_captured ]; then
+            echo "proceed=false" >> $GITHUB_OUTPUT; echo "already captured — skip"; exit 0
+          fi
+          if [ ! -f .a1_blocked ]; then
+            echo "proceed=true" >> $GITHUB_OUTPUT; echo "OPEN state — proceed (5min cadence)"; exit 0
+          fi
+          # BLOCKED: A1 limit=0 상태. ~2시간에 1번만 실제 잡 실행 (짝수시 + 분<5 → 시간당 1회, 2시간 간격)
+          H=$(( 10#$(date -u +%H) )); M=$(( 10#$(date -u +%M) ))
+          if [ $(( H % 2 )) -eq 0 ] && [ "$M" -lt 5 ]; then
+            echo "proceed=true" >> $GITHUB_OUTPUT
+            echo "BLOCKED but in 2h window (${H}:${M} UTC) — re-check A1 limit"
+          else
+            echo "proceed=false" >> $GITHUB_OUTPUT
+            echo "BLOCKED & throttled (${H}:${M} UTC) — skip this 5min tick"
+          fi
+
   launch:
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     env:
       SUPPRESS_LABEL_WARNING: "True"
@@ -55,13 +89,16 @@ jobs:
           echo '{"ocpus": 2, "memoryInGBs": 12}' > shape.json
           echo "${{ secrets.OCI_SSH_PUBLIC_KEY }}" > ssh.pub
 
-      - name: Preflight - validate resources
+      - name: Preflight - validate resources & A1 limit gate
         id: preflight
         env:
           TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
           IMG: ${{ secrets.OCI_IMAGE_OCID }}
           SUBNET: ${{ secrets.OCI_SUBNET_OCID }}
           AD: ${{ secrets.OCI_AD }}
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           BAD=0
@@ -106,37 +143,57 @@ jobs:
           fi
           echo "::endgroup::"
 
-          echo "::group::A1 limits / availability (diag)"
-          echo "=== resource-availability (standard-a1-core-count) ==="
-          oci limits resource-availability get \
-            --compartment-id "$TENANCY" \
-            --service-name compute \
-            --limit-name "standard-a1-core-count" \
-            --availability-domain "$AD" 2>&1 | grep -iE "available|used|quota|fractional|error|message" || true
-          echo "=== AD별 standard-a1-core-count 값 (모든 AD) ==="
-          oci limits value list --compartment-id "$TENANCY" \
-            --service-name compute --name standard-a1-core-count \
-            > /tmp/a1.json 2>/tmp/a1.err
-          if jq -e . /tmp/a1.json >/dev/null 2>&1; then
-            jq -r '.data[] | "LIMIT standard-a1-core-count @\(."availability-domain" // "REGIONAL") = \(.value)"' /tmp/a1.json
-            echo "합계 value = $(jq '[.data[].value] | add' /tmp/a1.json)"
-          else
-            echo "조회 실패:"; cat /tmp/a1.err
-          fi
-          echo "::endgroup::"
-
-          # === TEMP DIAG: limit 값만 확인하고 종료 (버스트 건너뜀 → 텔레그램 알림 안 나감) ===
-          echo "DIAG RUN — burst 생략, 알림 억제. limit 값 확인 후 종료."
-          exit 1
-
+          # 리소스 자체가 깨졌으면(시크릿/이미지/서브넷 문제) 진짜 hard error → 알림 살림
           if [ "$BAD" -ne 0 ]; then
-            echo "PREFLIGHT FAILED — a referenced resource is invalid. Fix the secret above, no launch attempted."
+            echo "a1_open=false" >> $GITHUB_OUTPUT
+            echo "PREFLIGHT FAILED — a referenced resource is invalid. Fix the secret above."
             exit 1
           fi
-          echo "Preflight OK — all launch resources valid."
+
+          echo "::group::A1 limit gate"
+          A1_LIMIT=$(oci limits value list --compartment-id "$TENANCY" \
+            --service-name compute --name standard-a1-core-count 2>/dev/null \
+            | jq '[.data[].value] | add // 0')
+          case "$A1_LIMIT" in ''|*[!0-9]*) A1_LIMIT=0 ;; esac
+          echo "standard-a1-core-count 합계 limit = $A1_LIMIT"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if [ "$A1_LIMIT" -gt 0 ]; then
+            echo "a1_open=true" >> $GITHUB_OUTPUT
+            echo "A1 limit > 0 → 사냥 진행"
+            if [ -f .a1_blocked ]; then
+              echo "이전 차단 상태에서 limit 복구 감지 → 1회 알림 + 마커 제거(고빈도 사냥 복귀)"
+              MSG="🟢 OCI A1 limit 복구 감지 (limit=${A1_LIMIT}) at $(date -u +%Y-%m-%dT%H:%MZ)%0A%0A자동으로 5분 고빈도 사냥을 재개합니다."
+              curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+                -d "chat_id=${TG_CHAT}" -d "text=$MSG" >/dev/null || true
+              git rm -q .a1_blocked
+              git commit -q -m "a1: limit 복구(${A1_LIMIT}) 감지 — 사냥 재개" || true
+              git push -q || true
+            fi
+          else
+            echo "a1_open=false" >> $GITHUB_OUTPUT
+            echo "⏸️ A1 limit=0 — Oracle가 무료 A1 할당량을 회수한 상태. burst 생략(낭비/알림 없음)."
+            echo "   이후 게이트가 ~2시간에 1번만 재확인. limit>0 되면 자동 재개."
+            if [ ! -f .a1_blocked ]; then
+              echo "차단 첫 감지 → 마커 생성 + 1회 알림(이후 침묵)"
+              date -u +%Y-%m-%dT%H:%MZ > .a1_blocked
+              MSG="⏸️ OCI A1 사냥 일시중단 at $(date -u +%Y-%m-%dT%H:%MZ)%0A%0A원인: 계정 A1 코어 limit이 0으로 회수됨 (Oracle 측, 코드 무관).%0A이전엔 'Out of host capacity'였으나 6/23부터 권한 거부(404)로 전환.%0A%0A• 5분 burst/에러알림 중단, 이제 ~2시간마다 limit만 재확인%0A• Oracle이 limit을 다시 올리면 자동으로 고빈도 사냥 재개%0A• 수동 확인: OCI 콘솔 → Limits, Quotas and Usage → compute → standard-a1-core-count"
+              curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+                -d "chat_id=${TG_CHAT}" -d "text=$MSG" >/dev/null || true
+              git add .a1_blocked
+              git commit -q -m "a1: limit=0 감지 — 사냥 일시중단 마커" || true
+              git push -q || true
+            fi
+          fi
+          echo "::endgroup::"
+          echo "Preflight done. a1_open 결정 완료."
+          exit 0
 
       - name: Try launch (burst)
         id: launch
+        if: steps.preflight.outputs.a1_open == 'true'
         env:
           BURST_COUNT: "30"
           BURST_SLEEP: "10"
@@ -169,7 +226,8 @@ jobs:
               CAPTURED=true
               break
             fi
-            if ! echo "$OUTPUT" | grep -qE "Out of host capacity|TooManyRequests|InternalError|500|RequestException|timed out|ConnectionError|connection"; then
+            # limit=0 회수가 게이트 사이 재발생할 수도 → NotAuthorized도 transient로 취급해 조용히 종료
+            if ! echo "$OUTPUT" | grep -qE "Out of host capacity|TooManyRequests|InternalError|500|RequestException|timed out|ConnectionError|connection|NotAuthorizedOrNotFound|404"; then
               echo "Non-transient error on attempt $i — aborting burst"
               echo "captured=false" >> $GITHUB_OUTPUT
               exit 1
@@ -210,9 +268,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Telegram on hard error
-        if: failure() && steps.launch.outcome == 'failure'
+        if: failure() && (steps.preflight.outcome == 'failure' || steps.launch.outcome == 'failure')
         run: |
-          MSG="🚨 🚨 🚨 A1 hunter HARD ERROR at $(date -u +%Y-%m-%dT%H:%MZ)%0A%0AThis is not a capacity miss - check secrets/permissions.%0A%0ALogs:%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MSG="🚨 🚨 🚨 A1 hunter HARD ERROR at $(date -u +%Y-%m-%dT%H:%MZ)%0A%0AThis is not a capacity miss / not the A1-limit=0 pause - check secrets/permissions/resources.%0A%0ALogs:%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d "text=$MSG"

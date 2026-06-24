@@ -20,6 +20,10 @@ jobs:
           if [ -f .a1_captured ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
           fi
+          if [ -f .a1_blocked ]; then
+            echo "blocked=true" >> $GITHUB_OUTPUT
+            echo "since=$(cat .a1_blocked)" >> $GITHUB_OUTPUT
+          fi
 
       - name: Count attempts
         if: steps.check.outputs.skip != 'true'
@@ -60,7 +64,10 @@ jobs:
           fi
           SEP="━━━━━━━━━━━━━━━"
           CMDS="🤖 OCI 코멘트 ( 응답 5~15분 지연 )%0A/oci_help - 이 도움말%0A/oci_status - 현재 상태 %2B 최근 50회 통계 (capacity 없음/에러)%0A/oci_last - 최근 5번 실행 결과%0A/oci_log - 마지막 에러 로그 요약%0A/oci_run - 즉시 1회 launch 수동 트리거"
-          if [ "$T" = "0" ]; then
+          if [ "${{ steps.check.outputs.blocked }}" = "true" ]; then
+            ICON="⏸️"
+            BODY="📅 ${HUNT_START_DATE} ~ / D%2B${DAYS}%0A⏸️ A1 limit=0 (Oracle 회수) — 사냥 일시중단%0A~2시간마다 limit 재확인 · 복구 시 자동 재개%0A🎯 ${REGION_LABEL} · A1.Flex 2/12%0A🚫 차단감지 ${{ steps.check.outputs.since }}"
+          elif [ "$T" = "0" ]; then
             ICON="⚠️"
             BODY="📅 ${HUNT_START_DATE} ~ / D%2B${DAYS}%0A🔄 24시간 실행 0건 — 스케줄 멈춤 의심 (cron-job.org 확인)%0A🎯 ${REGION_LABEL} · A1.Flex 2/12%0A⏳ 최근 없음"
           elif [ "$F" -gt "0" ] && [ "$S" = "0" ]; then
