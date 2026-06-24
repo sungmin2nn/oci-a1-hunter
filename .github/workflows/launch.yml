@@ -36,14 +36,16 @@ jobs:
           if [ ! -f .a1_blocked ]; then
             echo "proceed=true" >> $GITHUB_OUTPUT; echo "OPEN state — proceed (5min cadence)"; exit 0
           fi
-          # BLOCKED: A1 limit=0 상태. ~2시간에 1번만 실제 잡 실행 (짝수시 + 분<5 → 시간당 1회, 2시간 간격)
-          H=$(( 10#$(date -u +%H) )); M=$(( 10#$(date -u +%M) ))
-          if [ $(( H % 2 )) -eq 0 ] && [ "$M" -lt 5 ]; then
+          # BLOCKED: A1 limit=0 상태. 짝수 UTC시에만 진행 → 재확인 ~1-2h 간격.
+          # (차단 중 launch 잡은 read 호출만 하고 burst/알림 없음 → 짝수시 여러 번 떠도 무해)
+          # GitHub 스케줄이 불규칙(throttle)해도 짝수시 어느 틱이든 잡히도록 분 조건은 없앰.
+          H=$(( 10#$(date -u +%H) ))
+          if [ $(( H % 2 )) -eq 0 ]; then
             echo "proceed=true" >> $GITHUB_OUTPUT
-            echo "BLOCKED but in 2h window (${H}:${M} UTC) — re-check A1 limit"
+            echo "BLOCKED, even hour (${H} UTC) — re-check A1 limit"
           else
             echo "proceed=false" >> $GITHUB_OUTPUT
-            echo "BLOCKED & throttled (${H}:${M} UTC) — skip this 5min tick"
+            echo "BLOCKED, odd hour (${H} UTC) — skip"
           fi
 
   launch:
