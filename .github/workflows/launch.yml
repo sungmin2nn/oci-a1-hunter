@@ -112,6 +112,10 @@ jobs:
             --service-name compute \
             --limit-name "standard-a1-core-count" \
             --availability-domain "$AD" 2>&1 | grep -iE "available|used|quota|fractional|error|message" || true
+          echo "--- configured A1 limit value (quota vs capacity 판별) ---"
+          oci limits value list --compartment-id "$TENANCY" \
+            --service-name compute \
+            --availability-domain "$AD" 2>&1 | grep -iE "standard-a1|\"value\"|\"name\"" | head -20 || true
           echo "--- existing instances (compute read check) ---"
           oci compute instance list --compartment-id "$TENANCY" \
             --query 'data[].{name:"display-name",shape:shape,state:"lifecycle-state"}' 2>&1 | head -30 || true
