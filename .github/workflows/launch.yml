@@ -166,10 +166,7 @@ jobs:
             echo "a1_open=true" >> $GITHUB_OUTPUT
             echo "A1 limit > 0 → 사냥 진행"
             if [ -f .a1_blocked ]; then
-              echo "이전 차단 상태에서 limit 복구 감지 → 1회 알림 + 마커 제거(고빈도 사냥 복귀)"
-              MSG="🟢 OCI A1 limit 복구 감지 (limit=${A1_LIMIT}) at $(date -u +%Y-%m-%dT%H:%MZ)%0A%0A자동으로 5분 고빈도 사냥을 재개합니다."
-              curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-                -d "chat_id=${TG_CHAT}" -d "text=$MSG" >/dev/null || true
+              echo "이전 차단 상태에서 limit 복구 감지 → 마커 제거(고빈도 사냥 복귀). 알림은 생략(사장님 요청: 포획 시에만 알림)"
               git rm -q .a1_blocked
               git commit -q -m "a1: limit 복구(${A1_LIMIT}) 감지 — 사냥 재개" || true
               git push -q || true
@@ -179,11 +176,8 @@ jobs:
             echo "⏸️ A1 limit=0 — Oracle가 무료 A1 할당량을 회수한 상태. burst 생략(낭비/알림 없음)."
             echo "   이후 게이트가 ~2시간에 1번만 재확인. limit>0 되면 자동 재개."
             if [ ! -f .a1_blocked ]; then
-              echo "차단 첫 감지 → 마커 생성 + 1회 알림(이후 침묵)"
+              echo "차단 첫 감지 → 마커 생성(침묵). 알림은 생략(사장님 요청: 포획 시에만 알림)"
               date -u +%Y-%m-%dT%H:%MZ > .a1_blocked
-              MSG="⏸️ OCI A1 사냥 일시중단 at $(date -u +%Y-%m-%dT%H:%MZ)%0A%0A원인: 계정 A1 코어 limit이 0으로 회수됨 (Oracle 측, 코드 무관).%0A이전엔 'Out of host capacity'였으나 6/23부터 권한 거부(404)로 전환.%0A%0A• 5분 burst/에러알림 중단, 이제 ~2시간마다 limit만 재확인%0A• Oracle이 limit을 다시 올리면 자동으로 고빈도 사냥 재개%0A• 수동 확인: OCI 콘솔 → Limits, Quotas and Usage → compute → standard-a1-core-count"
-              curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-                -d "chat_id=${TG_CHAT}" -d "text=$MSG" >/dev/null || true
               git add .a1_blocked
               git commit -q -m "a1: limit=0 감지 — 사냥 일시중단 마커" || true
               git push -q || true
@@ -269,10 +263,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Telegram on hard error
+      # 하드 에러 텔레그램 알림은 사장님 요청으로 제거(2026-08-27). 포획 시에만 알림.
+      # 실패는 Actions 로그/이메일로만 남는다.
+      - name: Log hard error (no telegram)
         if: failure() && (steps.preflight.outcome == 'failure' || steps.launch.outcome == 'failure')
         run: |
-          MSG="🚨 🚨 🚨 A1 hunter HARD ERROR at $(date -u +%Y-%m-%dT%H:%MZ)%0A%0AThis is not a capacity miss / not the A1-limit=0 pause - check secrets/permissions/resources.%0A%0ALogs:%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "text=$MSG"
+          echo "::error::A1 hunter hard error — 시크릿/권한/리소스 확인 필요. 텔레그램 알림은 비활성."
